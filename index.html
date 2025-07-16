@@ -95,6 +95,12 @@
             font-size: 0.875rem;
         }
         /* Specific colors for action buttons */
+        .file-actions .preview-btn {
+            background-color: #f59e0b; /* Amber */
+        }
+        .file-actions .preview-btn:hover {
+            background-color: #d97706;
+        }
         .file-actions .download-btn {
             background-color: #22c55e; /* Green */
         }
@@ -106,6 +112,108 @@
         }
         .file-actions .delete-btn:hover {
             background-color: #dc2626;
+        }
+
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 20px;
+            border-radius: 12px;
+            width: 80%;
+            max-width: 800px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            position: relative;
+            max-height: 90vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        .modal-header h3 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #374151;
+        }
+        .close-button {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: #333;
+            text-decoration: none;
+        }
+        .modal-body {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column; /* Allow content to stack */
+            justify-content: center;
+            align-items: center;
+            min-height: 100px; /* Ensure some height for content */
+        }
+        .modal-body img {
+            max-width: 100%;
+            max-height: 70vh; /* Limit image height within modal */
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        .modal-body pre {
+            white-space: pre-wrap; /* Wrap long lines */
+            word-break: break-all; /* Break words if necessary */
+            max-height: 70vh;
+            overflow-y: auto;
+            background-color: #f9fafb;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            width: 100%;
+        }
+        .pdf-viewer-container {
+            width: 100%;
+            max-height: 70vh;
+            overflow: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background-color: #f9fafb;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+        }
+        .pdf-viewer-container canvas {
+            max-width: 100%;
+            height: auto;
+            display: block; /* Remove extra space below canvas */
+        }
+        .pdf-page-nav {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -167,9 +275,27 @@
         <div id="messageBox" class="message-box hidden"></div>
     </div>
 
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="previewFileName">File Preview</h3>
+                <span class="close-button" id="closeModalBtn">&times;</span>
+            </div>
+            <div class="modal-body" id="previewContent">
+                <!-- Content will be loaded here -->
+            </div>
+        </div>
+    </div>
+
     <!-- AWS SDK for JavaScript v2 CDN -->
     <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1093.0.min.js"></script>
+    <!-- PDF.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script>
+        // Set the workerSrc for PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js';
+
         // Global AWS S3 instance
         let s3;
         let bucketName;
@@ -185,6 +311,12 @@
         const listBtn = document.getElementById('listBtn');
         const fileListDiv = document.getElementById('fileList');
         const messageBox = document.getElementById('messageBox');
+
+        // Modal elements
+        const previewModal = document.getElementById('previewModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const previewFileName = document.getElementById('previewFileName');
+        const previewContent = document.getElementById('previewContent');
 
         /**
          * Displays a message to the user.
@@ -293,6 +425,7 @@
                     fileItem.innerHTML = `
                         <span class="text-gray-700 font-medium">${object.Key}</span>
                         <div class="file-actions">
+                            <button class="preview-btn" data-key="${object.Key}">Preview</button>
                             <button class="download-btn" data-key="${object.Key}">Download</button>
                             <button class="delete-btn" data-key="${object.Key}">Delete</button>
                         </div>
@@ -300,7 +433,10 @@
                     fileListDiv.appendChild(fileItem);
                 });
 
-                // Add event listeners for download and delete buttons
+                // Add event listeners for preview, download and delete buttons
+                fileListDiv.querySelectorAll('.preview-btn').forEach(button => {
+                    button.addEventListener('click', (event) => previewFile(event.target.dataset.key));
+                });
                 fileListDiv.querySelectorAll('.download-btn').forEach(button => {
                     button.addEventListener('click', (event) => downloadFile(event.target.dataset.key));
                 });
@@ -316,6 +452,144 @@
         }
 
         listBtn.addEventListener('click', listFiles);
+
+        /**
+         * Renders a PDF page onto a canvas.
+         * @param {object} pdfDoc - The PDF document object.
+         * @param {number} pageNum - The page number to render.
+         * @param {HTMLCanvasElement} canvas - The canvas element to render on.
+         * @param {number} scale - The scale factor for rendering.
+         */
+        async function renderPdfPage(pdfDoc, pageNum, canvas, scale) {
+            const page = await pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: scale });
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            const renderContext = {
+                canvasContext: context,
+                viewport: viewport
+            };
+            await page.render(renderContext).promise;
+        }
+
+        /**
+         * Previews a file from S3.
+         * @param {string} key - The key (name) of the file to preview.
+         */
+        async function previewFile(key) {
+            if (!s3 || !bucketName) {
+                showMessage('Please configure AWS first.', 'error');
+                return;
+            }
+
+            const params = {
+                Bucket: bucketName,
+                Key: key
+            };
+
+            previewFileName.textContent = `Preview: ${key}`;
+            previewContent.innerHTML = '<p class="text-gray-500">Loading preview...</p>'; // Loading indicator
+            previewModal.classList.remove('hidden');
+
+            try {
+                const data = await s3.getObject(params).promise();
+                const contentType = data.ContentType;
+                const fileBody = data.Body;
+
+                previewContent.innerHTML = ''; // Clear loading message
+
+                if (contentType.startsWith('image/')) {
+                    const blob = new Blob([fileBody], { type: contentType });
+                    const url = URL.createObjectURL(blob);
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.alt = `Preview of ${key}`;
+                    previewContent.appendChild(img);
+                    // Revoke URL when modal is closed
+                    closeModalBtn.onclick = () => {
+                        previewModal.classList.add('hidden');
+                        URL.revokeObjectURL(url);
+                    };
+                } else if (contentType.startsWith('text/')) {
+                    const textDecoder = new TextDecoder('utf-8');
+                    const textContent = textDecoder.decode(fileBody);
+                    const pre = document.createElement('pre');
+                    pre.textContent = textContent;
+                    previewContent.appendChild(pre);
+                } else if (contentType === 'application/pdf') {
+                    // PDF.js integration
+                    const pdfData = new Uint8Array(fileBody);
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                    const pdfDoc = await loadingTask.promise;
+
+                    const pdfContainer = document.createElement('div');
+                    pdfContainer.className = 'pdf-viewer-container';
+                    previewContent.appendChild(pdfContainer);
+
+                    // Render all pages for simplicity, or just the first page with navigation
+                    for (let i = 1; i <= pdfDoc.numPages; i++) {
+                        const canvas = document.createElement('canvas');
+                        canvas.id = `pdf-canvas-${i}`;
+                        pdfContainer.appendChild(canvas);
+                        await renderPdfPage(pdfDoc, i, canvas, 1.5); // Render with a scale
+                    }
+
+                    // Optional: Add page navigation for very large PDFs
+                    // If you only want to show one page at a time and add navigation:
+                    /*
+                    let currentPageNum = 1;
+                    const canvas = document.createElement('canvas');
+                    pdfContainer.appendChild(canvas);
+                    const pageNav = document.createElement('div');
+                    pageNav.className = 'pdf-page-nav';
+                    const prevBtn = document.createElement('button');
+                    prevBtn.textContent = 'Previous';
+                    prevBtn.onclick = async () => {
+                        if (currentPageNum > 1) {
+                            currentPageNum--;
+                            await renderPdfPage(pdfDoc, currentPageNum, canvas, 1.5);
+                        }
+                    };
+                    const nextBtn = document.createElement('button');
+                    nextBtn.textContent = 'Next';
+                    nextBtn.onclick = async () => {
+                        if (currentPageNum < pdfDoc.numPages) {
+                            currentPageNum++;
+                            await renderPdfPage(pdfDoc, currentPageNum, canvas, 1.5);
+                        }
+                    };
+                    pageNav.appendChild(prevBtn);
+                    pageNav.appendChild(nextBtn);
+                    pdfContainer.appendChild(pageNav);
+                    await renderPdfPage(pdfDoc, currentPageNum, canvas, 1.5);
+                    */
+
+                } else {
+                    // For other complex document types
+                    previewContent.innerHTML = `
+                        <p class="text-gray-700 text-center text-lg font-semibold">
+                            Preview Not Available for This File Type
+                        </p>
+                        <p class="text-gray-600 text-center mt-2">
+                            The file type <span class="font-bold">${contentType}</span> is a complex document format
+                            (e.g., Word, Excel). Direct in-browser preview requires specialized
+                            libraries or server-side processing which are not included in this demo.
+                        </p>
+                        <p class="text-gray-600 text-center mt-3">
+                            Please use the "Download" button to view this file with appropriate software.
+                        </p>
+                    `;
+                }
+
+                showMessage(`Previewing "${key}".`, 'success');
+            } catch (error) {
+                previewContent.innerHTML = `<p class="text-red-500">Error loading preview: ${error.message}</p>`;
+                showMessage(`Error previewing file "${key}": ${error.message}`, 'error');
+                console.error('Preview Error:', error);
+            }
+        }
 
         /**
          * Downloads a file from S3.
@@ -389,6 +663,20 @@
         // Initial state: Disable buttons until AWS is configured
         uploadBtn.disabled = true;
         listBtn.disabled = true;
+
+        // Modal close functionality
+        closeModalBtn.addEventListener('click', () => {
+            previewModal.classList.add('hidden');
+            previewContent.innerHTML = ''; // Clear content when closing
+        });
+
+        // Close modal if user clicks outside of it
+        window.addEventListener('click', (event) => {
+            if (event.target === previewModal) {
+                previewModal.classList.add('hidden');
+                previewContent.innerHTML = ''; // Clear content when closing
+            }
+        });
 
         // Optional: Load saved credentials from localStorage (for convenience in demo)
         window.onload = () => {
