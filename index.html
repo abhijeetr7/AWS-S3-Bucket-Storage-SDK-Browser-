@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS S3 Browser SDK</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for Inter font and general layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to start to prevent content from being too high */
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 32px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 900px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        input[type="text"], input[type="file"] {
+            border: 1px solid #d1d5db;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4f46e5; /* Indigo */
+            color: white;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        button:hover {
+            background-color: #4338ca; /* Darker indigo */
+            transform: translateY(-1px);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        .warning {
+            background-color: #fef2f2; /* Red-100 */
+            color: #ef4444; /* Red-500 */
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #fca5a5; /* Red-300 */
+            font-weight: 500;
+        }
+        .message-box {
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 16px;
+            font-weight: 500;
+        }
+        .message-box.success {
+            background-color: #ecfdf5; /* Green-100 */
+            color: #059669; /* Green-600 */
+            border: 1px solid #a7f3d0; /* Green-300 */
+        }
+        .message-box.error {
+            background-color: #fef2f2; /* Red-100 */
+            color: #dc2626; /* Red-600 */
+            border: 1px solid #fca5a5; /* Red-300 */
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e5e7eb; /* Gray-200 */
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-actions button {
+            margin-left: 8px;
+            padding: 6px 12px;
+            font-size: 0.875rem;
+        }
+        /* Specific colors for action buttons */
+        .file-actions .download-btn {
+            background-color: #22c55e; /* Green */
+        }
+        .file-actions .download-btn:hover {
+            background-color: #16a34a;
+        }
+        .file-actions .delete-btn {
+            background-color: #ef4444; /* Red */
+        }
+        .file-actions .delete-btn:hover {
+            background-color: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">AWS S3 Browser SDK Demo</h1>
+
+        <div class="warning">
+            <p class="font-bold">Security Warning:</p>
+            <p class="text-sm">
+                Entering AWS credentials directly into client-side code is highly insecure and NOT recommended for production applications. This demo is for educational purposes only.
+                In a real application, use AWS Cognito, IAM roles, or a backend service to manage S3 access securely.
+            </p>
+        </div>
+
+        <!-- AWS Configuration Section -->
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold text-gray-700">AWS Configuration</h2>
+            <div>
+                <label for="accessKeyId" class="block text-sm font-medium text-gray-700 mb-1">Access Key ID:</label>
+                <input type="text" id="accessKeyId" placeholder="Your AWS Access Key ID" class="focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label for="secretAccessKey" class="block text-sm font-medium text-gray-700 mb-1">Secret Access Key:</label>
+                <input type="text" id="secretAccessKey" placeholder="Your AWS Secret Access Key" class="focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label for="region" class="block text-sm font-medium text-gray-700 mb-1">Region:</label>
+                <input type="text" id="region" value="us-east-1" placeholder="e.g., us-east-1" class="focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label for="bucketName" class="block text-sm font-medium text-gray-700 mb-1">Bucket Name:</label>
+                <input type="text" id="bucketName" placeholder="Your S3 Bucket Name" class="focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <button id="configureAwsBtn" class="w-full">Configure AWS</button>
+        </div>
+
+        <!-- File Operations Section -->
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold text-gray-700">File Operations</h2>
+
+            <!-- Upload File -->
+            <div>
+                <label for="fileInput" class="block text-sm font-medium text-gray-700 mb-1">Upload File:</label>
+                <input type="file" id="fileInput" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                <button id="uploadBtn" class="mt-3 w-full">Upload File</button>
+            </div>
+
+            <!-- List Files -->
+            <div>
+                <button id="listBtn" class="w-full">List Files</button>
+                <div id="fileList" class="mt-4 border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-60 overflow-y-auto">
+                    <p class="text-gray-500 text-center">No files listed yet. Click "List Files".</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Display Area -->
+        <div id="messageBox" class="message-box hidden"></div>
+    </div>
+
+    <!-- AWS SDK for JavaScript v2 CDN -->
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1093.0.min.js"></script>
+    <script>
+        // Global AWS S3 instance
+        let s3;
+        let bucketName;
+
+        // Get DOM elements
+        const accessKeyIdInput = document.getElementById('accessKeyId');
+        const secretAccessKeyInput = document.getElementById('secretAccessKey');
+        const regionInput = document.getElementById('region');
+        const bucketNameInput = document.getElementById('bucketName');
+        const configureAwsBtn = document.getElementById('configureAwsBtn');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const listBtn = document.getElementById('listBtn');
+        const fileListDiv = document.getElementById('fileList');
+        const messageBox = document.getElementById('messageBox');
+
+        /**
+         * Displays a message to the user.
+         * @param {string} message - The message to display.
+         * @param {string} type - 'success' or 'error'.
+         */
+        function showMessage(message, type) {
+            messageBox.textContent = message;
+            messageBox.className = `message-box ${type}`;
+            messageBox.classList.remove('hidden');
+            // Hide message after 5 seconds
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 5000);
+        }
+
+        /**
+         * Initializes the AWS S3 client.
+         */
+        configureAwsBtn.addEventListener('click', () => {
+            const accessKeyId = accessKeyIdInput.value.trim();
+            const secretAccessKey = secretAccessKeyInput.value.trim();
+            const region = regionInput.value.trim();
+            bucketName = bucketNameInput.value.trim(); // Assign to global bucketName
+
+            if (!accessKeyId || !secretAccessKey || !region || !bucketName) {
+                showMessage('Please fill in all AWS configuration fields.', 'error');
+                return;
+            }
+
+            try {
+                AWS.config.update({
+                    accessKeyId: accessKeyId,
+                    secretAccessKey: secretAccessKey,
+                    region: region
+                });
+                s3 = new AWS.S3({ apiVersion: '2006-03-01' });
+                showMessage('AWS S3 configured successfully!', 'success');
+                // Enable file operation buttons
+                uploadBtn.disabled = false;
+                listBtn.disabled = false;
+            } catch (error) {
+                showMessage(`Error configuring AWS: ${error.message}`, 'error');
+                console.error('AWS Configuration Error:', error);
+            }
+        });
+
+        /**
+         * Uploads a selected file to S3.
+         */
+        uploadBtn.addEventListener('click', async () => {
+            if (!s3 || !bucketName) {
+                showMessage('Please configure AWS first.', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            if (!file) {
+                showMessage('Please select a file to upload.', 'error');
+                return;
+            }
+
+            const params = {
+                Bucket: bucketName,
+                Key: file.name, // Use the file name as the S3 object key
+                Body: file,
+                ContentType: file.type // Set content type for proper handling
+            };
+
+            try {
+                await s3.putObject(params).promise();
+                showMessage(`File "${file.name}" uploaded successfully!`, 'success');
+                fileInput.value = ''; // Clear the file input
+                listFiles(); // Refresh the file list
+            } catch (error) {
+                showMessage(`Error uploading file: ${error.message}`, 'error');
+                console.error('Upload Error:', error);
+            }
+        });
+
+        /**
+         * Lists files in the S3 bucket.
+         */
+        async function listFiles() {
+            if (!s3 || !bucketName) {
+                fileListDiv.innerHTML = '<p class="text-gray-500 text-center">Please configure AWS first.</p>';
+                return;
+            }
+
+            const params = {
+                Bucket: bucketName
+            };
+
+            try {
+                const data = await s3.listObjectsV2(params).promise();
+                fileListDiv.innerHTML = ''; // Clear previous list
+
+                if (data.Contents.length === 0) {
+                    fileListDiv.innerHTML = '<p class="text-gray-500 text-center">No files found in the bucket.</p>';
+                    return;
+                }
+
+                data.Contents.forEach(object => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.innerHTML = `
+                        <span class="text-gray-700 font-medium">${object.Key}</span>
+                        <div class="file-actions">
+                            <button class="download-btn" data-key="${object.Key}">Download</button>
+                            <button class="delete-btn" data-key="${object.Key}">Delete</button>
+                        </div>
+                    `;
+                    fileListDiv.appendChild(fileItem);
+                });
+
+                // Add event listeners for download and delete buttons
+                fileListDiv.querySelectorAll('.download-btn').forEach(button => {
+                    button.addEventListener('click', (event) => downloadFile(event.target.dataset.key));
+                });
+                fileListDiv.querySelectorAll('.delete-btn').forEach(button => {
+                    button.addEventListener('click', (event) => deleteFile(event.target.dataset.key));
+                });
+
+                showMessage(`Listed ${data.Contents.length} files.`, 'success');
+            } catch (error) {
+                showMessage(`Error listing files: ${error.message}`, 'error');
+                console.error('List Files Error:', error);
+            }
+        }
+
+        listBtn.addEventListener('click', listFiles);
+
+        /**
+         * Downloads a file from S3.
+         * @param {string} key - The key (name) of the file to download.
+         */
+        async function downloadFile(key) {
+            if (!s3 || !bucketName) {
+                showMessage('Please configure AWS first.', 'error');
+                return;
+            }
+
+            const params = {
+                Bucket: bucketName,
+                Key: key
+            };
+
+            try {
+                // Get the object content
+                const data = await s3.getObject(params).promise();
+
+                // Create a Blob from the file content
+                const blob = new Blob([data.Body], { type: data.ContentType });
+
+                // Create a temporary URL for the blob
+                const url = URL.createObjectURL(blob);
+
+                // Create a temporary anchor element to trigger download
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = key; // Set the download file name
+                document.body.appendChild(a);
+                a.click(); // Programmatically click the link to trigger download
+                document.body.removeChild(a); // Clean up
+                URL.revokeObjectURL(url); // Release the object URL
+
+                showMessage(`File "${key}" downloaded successfully!`, 'success');
+            } catch (error) {
+                showMessage(`Error downloading file "${key}": ${error.message}`, 'error');
+                console.error('Download Error:', error);
+            }
+        }
+
+        /**
+         * Deletes a file from S3.
+         * @param {string} key - The key (name) of the file to delete.
+         */
+        async function deleteFile(key) {
+            if (!s3 || !bucketName) {
+                showMessage('Please configure AWS first.', 'error');
+                return;
+            }
+
+            // In a real app, you'd add a confirmation dialog here.
+            // For this demo, we'll proceed directly.
+
+            const params = {
+                Bucket: bucketName,
+                Key: key
+            };
+
+            try {
+                await s3.deleteObject(params).promise();
+                showMessage(`File "${key}" deleted successfully!`, 'success');
+                listFiles(); // Refresh the file list
+            } catch (error) {
+                showMessage(`Error deleting file: ${error.message}`, 'error');
+                console.error('Delete Error:', error);
+            }
+        }
+
+        // Initial state: Disable buttons until AWS is configured
+        uploadBtn.disabled = true;
+        listBtn.disabled = true;
+
+        // Optional: Load saved credentials from localStorage (for convenience in demo)
+        window.onload = () => {
+            accessKeyIdInput.value = localStorage.getItem('awsAccessKeyId') || '';
+            secretAccessKeyInput.value = localStorage.getItem('awsSecretAccessKey') || '';
+            regionInput.value = localStorage.getItem('awsRegion') || 'us-east-1';
+            bucketNameInput.value = localStorage.getItem('awsBucketName') || '';
+
+            // Auto-configure if credentials are found on load
+            if (accessKeyIdInput.value && secretAccessKeyInput.value && regionInput.value && bucketNameInput.value) {
+                configureAwsBtn.click();
+            }
+        };
+
+        // Optional: Save credentials to localStorage when configured (for convenience in demo)
+        configureAwsBtn.addEventListener('click', () => {
+            localStorage.setItem('awsAccessKeyId', accessKeyIdInput.value);
+            localStorage.setItem('awsSecretAccessKey', secretAccessKeyInput.value);
+            localStorage.setItem('awsRegion', regionInput.value);
+            localStorage.setItem('awsBucketName', bucketNameInput.value);
+        });
+
+    </script>
+</body>
+</html>
